@@ -8,7 +8,7 @@ type Job struct {
 	ID      string `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	Type    string `json:"type"`
 	Payload []byte `json:"payload"`
-	Status  string `json:"status"`
+	Status  string `json:"status" gorm:"default:pending"`
 	// // retry / backoff
 	// RetryCount int `gorm:"not null;default:0"`
 	// MaxRetries int `gorm:"not null;default:5"`
