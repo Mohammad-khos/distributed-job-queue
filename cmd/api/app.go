@@ -1,17 +1,18 @@
 package main
 
 import (
-	"log"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 type Application struct {
-	Logger *log.Logger
+	Logger *zap.SugaredLogger
 	Router *http.ServeMux
 }
 
 func NewApplication() (*Application, func()) {
-	logger := log.Default()
+	logger := zap.Must(zap.NewProduction()).Sugar()
 	mux := http.NewServeMux()
 	app := &Application{
 		Logger: logger,
@@ -19,7 +20,7 @@ func NewApplication() (*Application, func()) {
 	}
 
 	cleanUp := func() {
-
+		_ = logger.Sync()
 	}
 	return app, cleanUp
 }

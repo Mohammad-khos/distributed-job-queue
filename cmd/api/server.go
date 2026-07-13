@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -24,25 +23,25 @@ func (app *Application) Run() {
 	errChan := make(chan error)
 
 	go func() {
-		log.Println("HTTP server started")
+		app.Logger.Infow("HTTP server started", "addr", srv.Addr)
 		errChan <- srv.ListenAndServe()
 	}()
 
 	select {
 	case <-cxt.Done():
-		log.Println("shutting down due signal")
+		app.Logger.Info("shutting down due signal")
 	case err := <-errChan:
-		log.Println("server shtting down due error")
+		app.Logger.Errorw("server shutting down due error", "error", err)
 		panic(err)
 	}
 	// graceful shutdown context
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	log.Println("starting graceful shutdown")
+	app.Logger.Info("starting graceful shutdown")
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("could not shutdow server gracefully", "error", err)
+		app.Logger.Errorw("could not shut down server gracefully", "error", err)
 		_ = srv.Close()
 		panic(err)
 	}
