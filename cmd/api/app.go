@@ -1,8 +1,7 @@
 package main
 
 import (
-	"net/http"
-
+	"github.com/go-chi/chi/v5"
 	"github.com/mohammad-khos/distributed-job-queue/internal/infra/repo"
 	httpHandler "github.com/mohammad-khos/distributed-job-queue/internal/transport/http"
 	"github.com/mohammad-khos/distributed-job-queue/pkg/db"
@@ -14,12 +13,12 @@ import (
 type Application struct {
 	Handler *httpHandler.JobHandler
 	Logger  *zap.SugaredLogger
-	Router  *http.ServeMux
+	Router  chi.Router
 }
 
 func NewApplication() (*Application, func()) {
 	logger := zap.Must(zap.NewProduction()).Sugar()
-	mux := http.NewServeMux()
+	router := chi.NewRouter()
 	validator := validation.NewValidator()
 	DB, err := db.New(
 		env.GetString("DB_URI", ""),
@@ -33,7 +32,7 @@ func NewApplication() (*Application, func()) {
 	}
 	logger.Infow("database connection established")
 	repo := repo.NewPostgressRepository(DB)
-	handler := httpHandler.NewJobHandler(repo , validator)
+	handler := httpHandler.NewJobHandler(repo, validator)
 
 	cleanUp := func() {
 		_ = logger.Sync()
@@ -44,7 +43,7 @@ func NewApplication() (*Application, func()) {
 	app := &Application{
 		Handler: handler,
 		Logger:  logger,
-		Router:  mux,
+		Router:  router,
 	}
 	return app, cleanUp
 }

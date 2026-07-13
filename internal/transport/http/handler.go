@@ -38,9 +38,24 @@ func (h *JobHandler) CreateJobHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxRetries := req.MaxRetries
+	if maxRetries == nil {
+		defaultMaxRetries := 5
+		maxRetries = &defaultMaxRetries
+	}
+
+	timeoutSeconds := req.TimeoutSeconds
+	if timeoutSeconds == nil {
+		defaultTimeoutSeconds := 60
+		timeoutSeconds = &defaultTimeoutSeconds
+	}
+
 	job := &domain.Job{
-		Type:    req.Type,
-		Payload: req.Payload,
+		Type:           req.Type,
+		Priority:       req.Priority,
+		MaxRetries:     *maxRetries,
+		TimeoutSeconds: *timeoutSeconds,
+		ScheduledAt:    req.ScheduledAt,
 	}
 
 	if err := h.repo.Create(r.Context(), job); err != nil {

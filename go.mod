@@ -3,6 +3,7 @@ module github.com/mohammad-khos/distributed-job-queue
 go 1.26.3
 
 require (
+	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-playground/validator/v10 v10.30.3
 	go.uber.org/zap v1.28.0
 	gorm.io/driver/postgres v1.6.0
