@@ -1,0 +1,240 @@
+diff --git a/cmd/dispatcher/main.go b/cmd/dispatcher/main.go
+new file mode 100644
+index 0000000..38a7fd2
+--- /dev/null
++++ b/cmd/dispatcher/main.go
+@@ -0,0 +1,131 @@
++package main
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"net"
++	"os"
++	"os/signal"
++	"syscall"
++	"time"
++
++	"github.com/joho/godotenv"
++	"github.com/mohammad-khos/distributed-job-queue/internal/dispatcher"
++	"github.com/mohammad-khos/distributed-job-queue/internal/infra/repo"
++	"github.com/mohammad-khos/distributed-job-queue/pkg/db"
++	"github.com/mohammad-khos/distributed-job-queue/pkg/env"
++	pb "github.com/mohammad-khos/distributed-job-queue/shared/proto"
++	"go.uber.org/zap"
++	"google.golang.org/grpc"
++)
++
++const (
++	defaultGRPCAddress      = ":50051"
++	defaultDispatcherTick   = time.Second
++	gracefulShutdownTimeout = 10 * time.Second
++)
++
++func main() {
++	_ = godotenv.Load()
++
++	logger := zap.Must(zap.NewProduction()).Sugar()
++	defer func() { _ = logger.Sync() }()
++
++	if err := run(logger); err != nil {
++		logger.Errorw("dispatcher stopped", "error", err)
++		_ = logger.Sync()
++		os.Exit(1)
++	}
++}
++
++func run(logger *zap.SugaredLogger) error {
++	signalContext, stop := signal.NotifyContext(
++		context.Background(),
++		syscall.SIGINT,
++		syscall.SIGTERM,
++	)
++	defer stop()
++
++	ctx, cancel := context.WithCancel(signalContext)
++	defer cancel()
++
++	database, err := db.New(
++		env.GetString("DB_URI", ""),
++		env.GetInt("DB_MAX_OPEN_CONNS", 30),
++		env.GetInt("DB_MAX_IDLE_CONNS", 30),
++		env.GetString("DB_MAX_IDLE_TIME", "15m"),
++	)
++	if err != nil {
++		return fmt.Errorf("connect database: %w", err)
++	}
++
++	sqlDB, err := database.DB()
++	if err != nil {
++		return fmt.Errorf("get database connection: %w", err)
++	}
++	defer sqlDB.Close()
++
++	repository := repo.NewPostgresRepository(database)
++	dispatcherNode := dispatcher.NewDispatcher(
++		durationFromEnv("DISPATCHER_TICK_INTERVAL", defaultDispatcherTick),
++		repository,
++	)
++
++	grpcServer := grpc.NewServer()
++	pb.RegisterDispatcherServiceServer(grpcServer, dispatcherNode)
++
++	address := env.GetString("DISPATCHER_GRPC_ADDR", defaultGRPCAddress)
++	listener, err := net.Listen("tcp", address)
++	if err != nil {
++		return fmt.Errorf("listen on %s: %w", address, err)
++	}
++	defer listener.Close()
++
++	go dispatcherNode.CheckDB(ctx)
++	go dispatcherNode.Scheduler(ctx)
++
++	serveErrors := make(chan error, 1)
++	go func() {
++		logger.Infow("dispatcher started", "addr", address)
++		serveErrors <- grpcServer.Serve(listener)
++	}()
++
++	select {
++	case <-ctx.Done():
++		logger.Info("dispatcher shutdown requested")
++	case serveErr := <-serveErrors:
++		cancel()
++		if serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
++			return fmt.Errorf("serve grpc: %w", serveErr)
++		}
++	}
++
++	stopped := make(chan struct{})
++	go func() {
++		grpcServer.GracefulStop()
++		close(stopped)
++	}()
++
++	select {
++	case <-stopped:
++	case <-time.After(gracefulShutdownTimeout):
++		grpcServer.Stop()
++	}
++
++	return nil
++}
++
++func durationFromEnv(key string, fallback time.Duration) time.Duration {
++	value := env.GetString(key, "")
++	if value == "" {
++		return fallback
++	}
++
++	duration, err := time.ParseDuration(value)
++	if err != nil || duration <= 0 {
++		return fallback
++	}
++
++	return duration
++}
+diff --git a/cmd/worker/main.go b/cmd/worker/main.go
+new file mode 100644
+index 0000000..6444e94
+--- /dev/null
++++ b/cmd/worker/main.go
+@@ -0,0 +1,97 @@
++package main
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"net/http"
++	"os"
++	"os/signal"
++	"strings"
++	"syscall"
++
++	"github.com/joho/godotenv"
++	jobhandler "github.com/mohammad-khos/distributed-job-queue/internal/job_handler"
++	"github.com/mohammad-khos/distributed-job-queue/internal/worker"
++	"github.com/mohammad-khos/distributed-job-queue/pkg/env"
++	"go.uber.org/zap"
++)
++
++const (
++	workerConcurrency       = 4
++	defaultDispatcherTarget = "localhost:50051"
++)
++
++func main() {
++	_ = godotenv.Load()
++
++	logger := zap.Must(zap.NewProduction()).Sugar()
++	defer func() { _ = logger.Sync() }()
++
++	if err := run(logger); err != nil {
++		logger.Errorw("worker stopped", "error", err)
++		_ = logger.Sync()
++		os.Exit(1)
++	}
++}
++
++func run(logger *zap.SugaredLogger) error {
++	ctx, stop := signal.NotifyContext(
++		context.Background(),
++		syscall.SIGINT,
++		syscall.SIGTERM,
++	)
++	defer stop()
++
++	jobHandler := jobhandler.NewHandler(&http.Client{})
++	processor := worker.NewJobProcessor(jobHandler)
++
++	workerID := strings.TrimSpace(env.GetString("WORKER_ID", ""))
++	if workerID == "" {
++		workerID = defaultWorkerID()
++	}
++
++	dispatcherTarget := env.GetString(
++		"DISPATCHER_GRPC_TARGET",
++		defaultDispatcherTarget,
++	)
++
++	node, err := worker.NewWorkerNode(
++		ctx,
++		workerID,
++		workerConcurrency,
++		[]string{
++			worker.JobTypeAPICall,
++			worker.JobTypeImageResize,
++			worker.JobTypeImageConvert,
++		},
++		dispatcherTarget,
++		processor,
++	)
++	if err != nil {
++		return fmt.Errorf("create worker node: %w", err)
++	}
++	defer node.Close()
++
++	logger.Infow(
++		"worker started",
++		"worker_id", workerID,
++		"dispatcher", dispatcherTarget,
++		"concurrency", workerConcurrency,
++	)
++
++	if err := node.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
++		return fmt.Errorf("run worker node: %w", err)
++	}
++
++	return nil
++}
++
++func defaultWorkerID() string {
++	hostname, err := os.Hostname()
++	if err != nil || strings.TrimSpace(hostname) == "" {
++		return "worker-1"
++	}
++
++	return hostname
++}

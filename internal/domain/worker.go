@@ -8,7 +8,10 @@ import (
 	pb "github.com/mohammad-khos/distributed-job-queue/shared/proto"
 )
 
-const CommandAssignJob = "assign_job"
+const (
+	CommandAssignJob  = "assign_job"
+	WorkerStatusReady = "ready"
+)
 
 type Worker struct {
 	ID           string
@@ -16,7 +19,7 @@ type Worker struct {
 	Concurrency  int
 	Jobs         chan *pb.AssignJob
 	Events       chan *pb.WorkerEvent
-	Mu sync.RWMutex
+	Mu           sync.RWMutex
 	Running      map[string]context.CancelFunc
 	Wg           sync.WaitGroup
 }
@@ -29,6 +32,11 @@ type WorkerSession struct {
 	AvailableSlots int
 	LastHeartbeat  time.Time
 	Status         string
+
+	Outbound      chan *DispatcherCommand
+	Done          chan struct{}
+	ReservedJobs  map[string]struct{}
+	RunningJobIDs map[string]struct{}
 }
 
 type DispatcherCommand struct {
