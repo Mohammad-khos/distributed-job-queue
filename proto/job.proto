@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package jobqueue.v1;
 
-option go_package = "/shared/proto;jobqueuev1";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/mohammad-khos/distributed-job-queue/shared/proto;jobqueuev1";
 
 service DispatcherService {
   rpc Connect(stream WorkerEvent) returns (stream DispatcherCommand);
@@ -19,7 +21,6 @@ message WorkerEvent {
   }
 }
 
-// پیام‌های Dispatcher به Worker
 message DispatcherCommand {
   oneof command {
     AssignJob assign_job = 10;
@@ -39,8 +40,13 @@ message Heartbeat {
 
 message AssignJob {
   string job_id = 1;
-  string job_type = 2;
-//   bytes payload = 3;
+  string type = 2;
+  int32 priority = 3;
+  int32 retry_count = 4;
+  int32 max_retries = 5;
+  int32 timeout_seconds = 6;
+  google.protobuf.Timestamp scheduled_at = 7;
+  google.protobuf.Timestamp created_at = 8;
 }
 
 message JobAccepted {

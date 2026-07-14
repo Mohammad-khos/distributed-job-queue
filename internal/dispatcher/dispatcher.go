@@ -2,21 +2,26 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/mohammad-khos/distributed-job-queue/internal/domain"
+	pb "github.com/mohammad-khos/distributed-job-queue/shared/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const heartbeatTimeout = time.Minute * 30
+const heartbeatTimeout = time.Second *15
 
 type Dispatcher struct {
 	tickInterval time.Duration
 	repo         domain.Repository
 	pendingJobs  chan *domain.Job
-
+	pb.UnimplementedDispatcherServiceServer
 	registryMu     sync.RWMutex
 	workerRegistry map[string]*domain.WorkerSession
 	Outbound       chan *domain.DispatcherCommand
@@ -32,6 +37,112 @@ func NewDispatcher(
 		pendingJobs:    make(chan *domain.Job, 10),
 		workerRegistry: make(map[string]*domain.WorkerSession),
 		Outbound:       make(chan *domain.DispatcherCommand),
+	}
+}
+
+func (d *Dispatcher) Connect(
+	stream grpc.BidiStreamingServer[
+		pb.WorkerEvent,
+		pb.DispatcherCommand,
+	],
+) error {
+	ctx := stream.Context()
+	recvErr := make(chan error, 1)
+
+	go func() {
+		for {
+			event, err := stream.Recv()
+			if err != nil {
+				recvErr <- err
+				return
+			}
+
+			d.handleWorkerEvent(event)
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+
+		case err := <-recvErr:
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+
+		case command, ok := <-d.Outbound:
+			if !ok {
+				return nil
+			}
+
+			pbCommand := dispatcherCommandToProto(command)
+			if pbCommand == nil {
+				continue
+			}
+
+			if err := stream.Send(pbCommand); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (d *Dispatcher) handleWorkerEvent(event *pb.WorkerEvent) {
+	switch payload := event.GetEvent().(type) {
+	case *pb.WorkerEvent_Register:
+		d.registryMu.Lock()
+		d.workerRegistry[event.GetWorkerId()] = &domain.WorkerSession{
+			ID:             event.GetWorkerId(),
+			Capabilities:   payload.Register.GetCapabilities(),
+			Concurrency:    int(payload.Register.GetConcurrency()),
+			AvailableSlots: int(payload.Register.GetConcurrency()),
+			LastHeartbeat:  time.Now(),
+			Status:         "ready",
+		}
+		d.registryMu.Unlock()
+
+	case *pb.WorkerEvent_Heartbeat:
+		d.HandleHeartbeat(&domain.Heartbeat{
+			WorkerID:       event.GetWorkerId(),
+			RunningJobs:    int(payload.Heartbeat.GetRunningJobs()),
+			AvailableSlots: int(payload.Heartbeat.GetAvailableSlots()),
+			SentAt:         time.Now(),
+		})
+
+	case *pb.WorkerEvent_JobAccepted:
+		log.Printf("worker %s accepted job %s", event.GetWorkerId(), payload.JobAccepted.GetJobId())
+
+	case *pb.WorkerEvent_JobResult:
+		log.Printf("worker %s finished job %s success=%t", event.GetWorkerId(), payload.JobResult.GetJobId(), payload.JobResult.GetSuccess())
+	}
+}
+
+func dispatcherCommandToProto(command *domain.DispatcherCommand) *pb.DispatcherCommand {
+	if command.Type != domain.CommandAssignJob || command.Job == nil {
+		return nil
+	}
+
+	assignJob := &pb.AssignJob{
+		JobId:          command.Job.ID,
+		Type:           command.Job.Type,
+		Priority:       int32(command.Job.Priority),
+		RetryCount:     int32(command.Job.RetryCount),
+		MaxRetries:     int32(command.Job.MaxRetries),
+		TimeoutSeconds: int32(command.Job.TimeoutSeconds),
+	}
+	if command.Job.ScheduledAt != nil {
+		assignJob.ScheduledAt = timestamppb.New(*command.Job.ScheduledAt)
+	}
+	if !command.Job.CreatedAt.IsZero() {
+		assignJob.CreatedAt = timestamppb.New(command.Job.CreatedAt)
+	}
+
+	return &pb.DispatcherCommand{
+		Command: &pb.DispatcherCommand_AssignJob{
+			AssignJob: assignJob,
+		},
 	}
 }
 
@@ -75,17 +186,6 @@ func (d *Dispatcher) HandleHeartbeat(h *domain.Heartbeat) {
 	worker.AvailableSlots = h.AvailableSlots
 	worker.LastHeartbeat = time.Now()
 	worker.Status = "ready"
-}
-
-func (d *Dispatcher) SendLoop(ctx context.Context) {
-	// for {
-	// 	select {
-	// 	case <-ctx.Done():
-	// 		return
-	// 	// case cmd := <-d.Outbound:
-	// 		// Send to gRPC Connection : d.conn.Send(cmd)
-	// 	}
-	// }
 }
 
 func (d *Dispatcher) Scheduler(ctx context.Context) {

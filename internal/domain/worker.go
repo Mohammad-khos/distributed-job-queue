@@ -2,12 +2,14 @@ package domain
 
 import (
 	"context"
+	"sync"
 	"time"
 
-	// "google.golang.org/grpc"
+	pb "github.com/mohammad-khos/distributed-job-queue/shared/proto"
+	"google.golang.org/grpc"
 )
-const CommandAssignJob = "assign_job"
 
+const CommandAssignJob = "assign_job"
 
 type Worker struct {
 	ID           string
@@ -15,24 +17,24 @@ type Worker struct {
 	Concurrency  int
 
 	// صف داخلی jobها
-	// jobs chan *pb.AssignJob
+	jobs chan *pb.AssignJob
 
 	// پیام‌هایی که باید برای Dispatcher ارسال شوند
-	// events chan *pb.WorkerEvent
+	events chan *pb.WorkerEvent
 
 	// محدود کردن تعداد jobهای هم‌زمان
 	slots chan struct{}
 
 	// اتصال gRPC
-	// conn *grpc.ClientConn
-	// client pb.DispatcherServiceClient
+	conn   *grpc.ClientConn
+	client pb.DispatcherServiceClient
 
 	// jobهای در حال اجرا و cancel function آن‌ها
 	// mu      sync.RWMutex
 	running map[string]context.CancelFunc
 
 	// // مدیریت lifecycle goroutineها
-	// wg sync.WaitGroup
+	wg sync.WaitGroup
 }
 
 type WorkerSession struct {

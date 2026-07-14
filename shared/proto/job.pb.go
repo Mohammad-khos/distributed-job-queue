@@ -9,6 +9,7 @@ package jobqueuev1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -143,7 +144,6 @@ func (*WorkerEvent_JobAccepted) isWorkerEvent_Event() {}
 
 func (*WorkerEvent_JobResult) isWorkerEvent_Event() {}
 
-// پیام‌های Dispatcher به Worker
 type DispatcherCommand struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Command:
@@ -331,11 +331,17 @@ func (x *Heartbeat) GetRunningJobs() int32 {
 }
 
 type AssignJob struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	JobType       string                 `protobuf:"bytes,2,opt,name=job_type,json=jobType,proto3" json:"job_type,omitempty"` //   bytes payload = 3;
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	JobId          string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Type           string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Priority       int32                  `protobuf:"varint,3,opt,name=priority,proto3" json:"priority,omitempty"`
+	RetryCount     int32                  `protobuf:"varint,4,opt,name=retry_count,json=retryCount,proto3" json:"retry_count,omitempty"`
+	MaxRetries     int32                  `protobuf:"varint,5,opt,name=max_retries,json=maxRetries,proto3" json:"max_retries,omitempty"`
+	TimeoutSeconds int32                  `protobuf:"varint,6,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
+	ScheduledAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`
+	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AssignJob) Reset() {
@@ -375,11 +381,53 @@ func (x *AssignJob) GetJobId() string {
 	return ""
 }
 
-func (x *AssignJob) GetJobType() string {
+func (x *AssignJob) GetType() string {
 	if x != nil {
-		return x.JobType
+		return x.Type
 	}
 	return ""
+}
+
+func (x *AssignJob) GetPriority() int32 {
+	if x != nil {
+		return x.Priority
+	}
+	return 0
+}
+
+func (x *AssignJob) GetRetryCount() int32 {
+	if x != nil {
+		return x.RetryCount
+	}
+	return 0
+}
+
+func (x *AssignJob) GetMaxRetries() int32 {
+	if x != nil {
+		return x.MaxRetries
+	}
+	return 0
+}
+
+func (x *AssignJob) GetTimeoutSeconds() int32 {
+	if x != nil {
+		return x.TimeoutSeconds
+	}
+	return 0
+}
+
+func (x *AssignJob) GetScheduledAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ScheduledAt
+	}
+	return nil
+}
+
+func (x *AssignJob) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
 }
 
 type JobAccepted struct {
@@ -550,7 +598,7 @@ var File_job_proto protoreflect.FileDescriptor
 
 const file_job_proto_rawDesc = "" +
 	"\n" +
-	"\tjob.proto\x12\vjobqueue.v1\"\x9e\x02\n" +
+	"\tjob.proto\x12\vjobqueue.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9e\x02\n" +
 	"\vWorkerEvent\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x129\n" +
 	"\bregister\x18\n" +
@@ -572,10 +620,19 @@ const file_job_proto_rawDesc = "" +
 	"\fcapabilities\x18\x02 \x03(\tR\fcapabilities\"W\n" +
 	"\tHeartbeat\x12'\n" +
 	"\x0favailable_slots\x18\x01 \x01(\x05R\x0eavailableSlots\x12!\n" +
-	"\frunning_jobs\x18\x02 \x01(\x05R\vrunningJobs\"=\n" +
+	"\frunning_jobs\x18\x02 \x01(\x05R\vrunningJobs\"\xb7\x02\n" +
 	"\tAssignJob\x12\x15\n" +
-	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x19\n" +
-	"\bjob_type\x18\x02 \x01(\tR\ajobType\"$\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +
+	"\bpriority\x18\x03 \x01(\x05R\bpriority\x12\x1f\n" +
+	"\vretry_count\x18\x04 \x01(\x05R\n" +
+	"retryCount\x12\x1f\n" +
+	"\vmax_retries\x18\x05 \x01(\x05R\n" +
+	"maxRetries\x12'\n" +
+	"\x0ftimeout_seconds\x18\x06 \x01(\x05R\x0etimeoutSeconds\x12=\n" +
+	"\fscheduled_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vscheduledAt\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"$\n" +
 	"\vJobAccepted\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"y\n" +
 	"\tJobResult\x12\x15\n" +
@@ -587,7 +644,7 @@ const file_job_proto_rawDesc = "" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason2\\\n" +
 	"\x11DispatcherService\x12G\n" +
-	"\aConnect\x12\x18.jobqueue.v1.WorkerEvent\x1a\x1e.jobqueue.v1.DispatcherCommand(\x010\x01B\x1aZ\x18/shared/proto;jobqueuev1b\x06proto3"
+	"\aConnect\x12\x18.jobqueue.v1.WorkerEvent\x1a\x1e.jobqueue.v1.DispatcherCommand(\x010\x01BHZFgithub.com/mohammad-khos/distributed-job-queue/shared/proto;jobqueuev1b\x06proto3"
 
 var (
 	file_job_proto_rawDescOnce sync.Once
@@ -603,14 +660,15 @@ func file_job_proto_rawDescGZIP() []byte {
 
 var file_job_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_job_proto_goTypes = []any{
-	(*WorkerEvent)(nil),       // 0: jobqueue.v1.WorkerEvent
-	(*DispatcherCommand)(nil), // 1: jobqueue.v1.DispatcherCommand
-	(*RegisterWorker)(nil),    // 2: jobqueue.v1.RegisterWorker
-	(*Heartbeat)(nil),         // 3: jobqueue.v1.Heartbeat
-	(*AssignJob)(nil),         // 4: jobqueue.v1.AssignJob
-	(*JobAccepted)(nil),       // 5: jobqueue.v1.JobAccepted
-	(*JobResult)(nil),         // 6: jobqueue.v1.JobResult
-	(*CancelJob)(nil),         // 7: jobqueue.v1.CancelJob
+	(*WorkerEvent)(nil),           // 0: jobqueue.v1.WorkerEvent
+	(*DispatcherCommand)(nil),     // 1: jobqueue.v1.DispatcherCommand
+	(*RegisterWorker)(nil),        // 2: jobqueue.v1.RegisterWorker
+	(*Heartbeat)(nil),             // 3: jobqueue.v1.Heartbeat
+	(*AssignJob)(nil),             // 4: jobqueue.v1.AssignJob
+	(*JobAccepted)(nil),           // 5: jobqueue.v1.JobAccepted
+	(*JobResult)(nil),             // 6: jobqueue.v1.JobResult
+	(*CancelJob)(nil),             // 7: jobqueue.v1.CancelJob
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
 }
 var file_job_proto_depIdxs = []int32{
 	2, // 0: jobqueue.v1.WorkerEvent.register:type_name -> jobqueue.v1.RegisterWorker
@@ -619,13 +677,15 @@ var file_job_proto_depIdxs = []int32{
 	6, // 3: jobqueue.v1.WorkerEvent.job_result:type_name -> jobqueue.v1.JobResult
 	4, // 4: jobqueue.v1.DispatcherCommand.assign_job:type_name -> jobqueue.v1.AssignJob
 	7, // 5: jobqueue.v1.DispatcherCommand.cancel_job:type_name -> jobqueue.v1.CancelJob
-	0, // 6: jobqueue.v1.DispatcherService.Connect:input_type -> jobqueue.v1.WorkerEvent
-	1, // 7: jobqueue.v1.DispatcherService.Connect:output_type -> jobqueue.v1.DispatcherCommand
-	7, // [7:8] is the sub-list for method output_type
-	6, // [6:7] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	8, // 6: jobqueue.v1.AssignJob.scheduled_at:type_name -> google.protobuf.Timestamp
+	8, // 7: jobqueue.v1.AssignJob.created_at:type_name -> google.protobuf.Timestamp
+	0, // 8: jobqueue.v1.DispatcherService.Connect:input_type -> jobqueue.v1.WorkerEvent
+	1, // 9: jobqueue.v1.DispatcherService.Connect:output_type -> jobqueue.v1.DispatcherCommand
+	9, // [9:10] is the sub-list for method output_type
+	8, // [8:9] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_job_proto_init() }
