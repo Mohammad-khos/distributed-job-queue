@@ -340,6 +340,7 @@ type AssignJob struct {
 	TimeoutSeconds int32                  `protobuf:"varint,6,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
 	ScheduledAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=scheduled_at,json=scheduledAt,proto3" json:"scheduled_at,omitempty"`
 	CreatedAt      *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Payload        []byte                 `protobuf:"bytes,9,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -426,6 +427,13 @@ func (x *AssignJob) GetScheduledAt() *timestamppb.Timestamp {
 func (x *AssignJob) GetCreatedAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *AssignJob) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
 	}
 	return nil
 }
@@ -620,7 +628,7 @@ const file_job_proto_rawDesc = "" +
 	"\fcapabilities\x18\x02 \x03(\tR\fcapabilities\"W\n" +
 	"\tHeartbeat\x12'\n" +
 	"\x0favailable_slots\x18\x01 \x01(\x05R\x0eavailableSlots\x12!\n" +
-	"\frunning_jobs\x18\x02 \x01(\x05R\vrunningJobs\"\xb7\x02\n" +
+	"\frunning_jobs\x18\x02 \x01(\x05R\vrunningJobs\"\xd1\x02\n" +
 	"\tAssignJob\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x1a\n" +
@@ -632,7 +640,8 @@ const file_job_proto_rawDesc = "" +
 	"\x0ftimeout_seconds\x18\x06 \x01(\x05R\x0etimeoutSeconds\x12=\n" +
 	"\fscheduled_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vscheduledAt\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"$\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x18\n" +
+	"\apayload\x18\t \x01(\fR\apayload\"$\n" +
 	"\vJobAccepted\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"y\n" +
 	"\tJobResult\x12\x15\n" +
