@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package jobqueue.v1;
+
+option go_package = "/shared/proto;jobqueuev1";
+
+service DispatcherService {
+  rpc Connect(stream WorkerEvent) returns (stream DispatcherCommand);
+}
+
+message WorkerEvent {
+  string worker_id = 1;
+
+  oneof event {
+    RegisterWorker register = 10;
+    Heartbeat heartbeat = 11;
+    JobAccepted job_accepted = 12;
+    JobResult job_result = 13;
+  }
+}
+
+// پیام‌های Dispatcher به Worker
+message DispatcherCommand {
+  oneof command {
+    AssignJob assign_job = 10;
+    CancelJob cancel_job = 11;
+  }
+}
+
+message RegisterWorker {
+  int32 concurrency = 1;
+  repeated string capabilities = 2;
+}
+
+message Heartbeat {
+  int32 available_slots = 1;
+  int32 running_jobs = 2;
+}
+
+message AssignJob {
+  string job_id = 1;
+  string job_type = 2;
+//   bytes payload = 3;
+}
+
+message JobAccepted {
+  string job_id = 1;
+}
+
+message JobResult {
+  string job_id = 1;
+  bool success = 2;
+  bytes output = 3;
+  string error_message = 4;
+}
+
+message CancelJob {
+  string job_id = 1;
+  string reason = 2;
+}

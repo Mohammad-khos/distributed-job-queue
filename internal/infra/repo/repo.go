@@ -20,3 +20,7 @@ func NewPostgressRepository(DB *gorm.DB) *PostgressReposiroty {
 func (r *PostgressReposiroty) Create(ctx context.Context, job *domain.Job) error {
 	return r.DB.WithContext(ctx).Create(job).Error
 }
+
+func (r *PostgressReposiroty) ClaimQueuedJobs(ctx context.Context, limit uint) ([]*domain.Job, error) {
+	return nil, nil
+}
