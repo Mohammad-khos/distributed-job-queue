@@ -2,6 +2,14 @@ package domain
 
 import "time"
 
+const (
+	JobStatusPending    = "pending"
+	JobStatusReserved   = "reserved"
+	JobStatusProcessing = "processing"
+	JobStatusDone       = "done"
+	JobStatusFailed     = "failed"
+)
+
 type Job struct {
 	ID             string     `json:"id" gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
 	Type           string     `json:"type"`

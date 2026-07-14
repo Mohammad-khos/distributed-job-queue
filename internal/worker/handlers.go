@@ -3,13 +3,25 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	jobhandler "github.com/mohammad-khos/distributed-job-queue/internal/job_handler"
 	pb "github.com/mohammad-khos/distributed-job-queue/shared/proto"
 )
+
+const (
+	JobTypeAPICall      = "api_call"
+	JobTypeImageResize  = "image_resize"
+	JobTypeImageConvert = "image_convert"
+)
+
+type jobProcessor struct {
+	handler JobHandler
+}
 
 type apiCallPayload struct {
 	Method         string            `json:"method"`
@@ -32,76 +44,171 @@ type imageConvertPayload struct {
 	Format string `json:"format"`
 }
 
-func (n *WorkerNode) handleAPICall(ctx context.Context, job *pb.AssignJob) error {
+
+func NewJobProcessor(handler JobHandler) JobProcessor {
+	return &jobProcessor{
+		handler: handler,
+	}
+}
+
+func (p *jobProcessor) Process(
+	ctx context.Context,
+	job *pb.AssignJob,
+) ([]byte, error) {
+	if job == nil {
+		return nil, errors.New("worker: assigned job is nil")
+	}
+
+	if p == nil || p.handler == nil {
+		return nil, errors.New("worker: job handler is not configured")
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	switch strings.TrimSpace(job.GetType()) {
+	case JobTypeAPICall:
+		return p.processAPICall(ctx, job)
+
+	case JobTypeImageResize:
+		return p.processImageResize(ctx, job)
+
+	case JobTypeImageConvert:
+		return p.processImageConvert(ctx, job)
+
+	default:
+		return nil, fmt.Errorf(
+			"worker: unsupported job type %q",
+			job.GetType(),
+		)
+	}
+}
+
+func (p *jobProcessor) processAPICall(
+	ctx context.Context,
+	job *pb.AssignJob,
+) ([]byte, error) {
 	var payload apiCallPayload
+
 	if err := decodeJobPayload(job, &payload); err != nil {
-		return err
+		return nil, err
 	}
 
 	timeoutSeconds := payload.TimeoutSeconds
-	if timeoutSeconds == 0 {
+	if timeoutSeconds <= 0 {
 		timeoutSeconds = int(job.GetTimeoutSeconds())
 	}
 
-	req := jobhandler.APICallRequest{
+	request := jobhandler.APICallRequest{
 		Method:  payload.Method,
 		URL:     payload.URL,
 		Headers: payload.Headers,
 		Body:    payload.Body,
 	}
+
 	if timeoutSeconds > 0 {
-		req.Timeout = time.Duration(timeoutSeconds) * time.Second
+		request.Timeout = time.Duration(timeoutSeconds) * time.Second
 	}
 
-	resp, err := n.handler.CallPublicAPI(ctx, req)
+	response, err := p.handler.CallPublicAPI(ctx, request)
 	if err != nil {
-		return err
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("api_call returned status code %d", resp.StatusCode)
+		return nil, fmt.Errorf("execute api_call job: %w", err)
 	}
 
-	return nil
+	if response == nil {
+		return nil, errors.New(
+			"execute api_call job: handler returned nil response",
+		)
+	}
+
+	if response.StatusCode >= http.StatusBadRequest {
+		return response.Body, fmt.Errorf(
+			"api_call returned status code %d",
+			response.StatusCode,
+		)
+	}
+
+	return response.Body, nil
 }
 
-func (n *WorkerNode) handleImageResize(ctx context.Context, job *pb.AssignJob) error {
+func (p *jobProcessor) processImageResize(
+	ctx context.Context,
+	job *pb.AssignJob,
+) ([]byte, error) {
 	var payload imageResizePayload
+
 	if err := decodeJobPayload(job, &payload); err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err := n.handler.ResizeImage(ctx, jobhandler.ImageResizeRequest{
-		Data:            payload.Data,
-		Width:           payload.Width,
-		Height:          payload.Height,
-		KeepAspectRatio: payload.KeepAspectRatio,
-		OutputFormat:    payload.OutputFormat,
-	})
-	return err
+	output, err := p.handler.ResizeImage(
+		ctx,
+		jobhandler.ImageResizeRequest{
+			Data:            payload.Data,
+			Width:           payload.Width,
+			Height:          payload.Height,
+			KeepAspectRatio: payload.KeepAspectRatio,
+			OutputFormat:    payload.OutputFormat,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("execute image_resize job: %w", err)
+	}
+
+	return output, nil
 }
 
-func (n *WorkerNode) handleImageConvert(ctx context.Context, job *pb.AssignJob) error {
+func (p *jobProcessor) processImageConvert(
+	ctx context.Context,
+	job *pb.AssignJob,
+) ([]byte, error) {
 	var payload imageConvertPayload
+
 	if err := decodeJobPayload(job, &payload); err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err := n.handler.ConvertImage(ctx, jobhandler.ImageConvertRequest{
-		Data:   payload.Data,
-		Format: payload.Format,
-	})
-	return err
+	output, err := p.handler.ConvertImage(
+		ctx,
+		jobhandler.ImageConvertRequest{
+			Data:   payload.Data,
+			Format: payload.Format,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("execute image_convert job: %w", err)
+	}
+
+	return output, nil
 }
 
+func decodeJobPayload(job *pb.AssignJob, destination any) error {
+	if job == nil {
+		return errors.New("worker: assigned job is nil")
+	}
 
-
-func decodeJobPayload(job *pb.AssignJob, dst any) error {
 	payload := job.GetPayload()
 	if len(payload) == 0 {
-		return fmt.Errorf("%s job payload is required", job.GetType())
+		return fmt.Errorf(
+			"worker: payload for job type %q is required",
+			job.GetType(),
+		)
 	}
-	if err := json.Unmarshal(payload, dst); err != nil {
-		return fmt.Errorf("decode %s job payload: %w", job.GetType(), err)
+
+	if destination == nil {
+		return errors.New(
+			"worker: payload destination cannot be nil",
+		)
 	}
+
+	if err := json.Unmarshal(payload, destination); err != nil {
+		return fmt.Errorf(
+			"decode %s job payload: %w",
+			job.GetType(),
+			err,
+		)
+	}
+
 	return nil
 }
